@@ -17,6 +17,8 @@ globalThis.document = {
     return {};
   }
 };
+globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
 globalThis.Image = Image;
 globalThis.ImageData = ImageData;
 globalThis.DOMMatrix = DOMMatrix;
