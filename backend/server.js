@@ -9,9 +9,13 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import PDFDocument from 'pdfkit';
 
 // Polyfills for pdfjs
-if (!globalThis.Image) globalThis.Image = Image;
-if (!globalThis.ImageData) globalThis.ImageData = ImageData;
-if (!globalThis.DOMMatrix) globalThis.DOMMatrix = DOMMatrix;
+globalThis.Image = Image;
+globalThis.ImageData = ImageData;
+globalThis.DOMMatrix = DOMMatrix;
+globalThis.HTMLElement = class {};
+globalThis.HTMLCanvasElement = class {};
+globalThis.HTMLImageElement = Image;
+globalThis.navigator = { userAgent: 'node' };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const upload = multer({ dest: 'uploads/' });
