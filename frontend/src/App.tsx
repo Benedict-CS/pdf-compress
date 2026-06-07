@@ -13,6 +13,7 @@ function App() {
   const [quality, setQuality] = useState(0.9);
   const [scale, setScale] = useState(3.0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
 
@@ -21,6 +22,30 @@ function App() {
       setFile(e.target.files[0]);
       setError(null);
       setStats(null);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const droppedFile = e.dataTransfer.files[0];
+      if (droppedFile.type === 'application/pdf') {
+        setFile(droppedFile);
+        setError(null);
+        setStats(null);
+      } else {
+        setError('Only PDF files are supported.');
+      }
     }
   };
 
@@ -82,7 +107,7 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 md:p-8">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 md:p-8 font-sans">
       <div className="w-full max-w-5xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row border border-slate-200">
         
         {/* Left Side: Brand & Upload */}
@@ -97,10 +122,14 @@ function App() {
 
           <div className="mt-8 mb-8 relative z-10 flex-grow flex flex-col justify-center">
             <div 
-              className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all transform hover:scale-[1.01] ${
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => document.getElementById('file-input')?.click()}
+              className={`border-2 border-dashed rounded-3xl p-8 text-center cursor-pointer transition-all transform ${
+                isDragging ? 'border-white bg-white/20 scale-[1.03] shadow-2xl' : 
                 file ? 'border-white bg-white/10 shadow-inner' : 'border-blue-300 hover:border-white hover:bg-white/5'
               }`}
-              onClick={() => document.getElementById('file-input')?.click()}
             >
               <input 
                 id="file-input"
@@ -124,7 +153,7 @@ function App() {
                   </>
                 ) : (
                   <>
-                    <div className="bg-blue-500/50 p-4 rounded-2xl mb-4 text-white">
+                    <div className={`p-4 rounded-2xl mb-4 text-white transition-colors ${isDragging ? 'bg-white text-blue-600' : 'bg-blue-500/50'}`}>
                       <FileUp size={48} />
                     </div>
                     <span className="font-bold text-lg text-white">Select PDF Document</span>

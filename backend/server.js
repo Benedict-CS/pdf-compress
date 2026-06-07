@@ -93,4 +93,22 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
+
+  // Automated Cleanup: Every 30 minutes, delete files older than 1 hour
+  setInterval(() => {
+    const uploadsDir = path.join(__dirname, 'uploads');
+    fs.readdir(uploadsDir, (err, files) => {
+      if (err) return;
+      const now = Date.now();
+      files.forEach(file => {
+        if (file === '.gitkeep') return;
+        const filePath = path.join(uploadsDir, file);
+        fs.stat(filePath, (err, stats) => {
+          if (!err && (now - stats.mtimeMs) > 3600000) {
+            fs.unlink(filePath, () => {});
+          }
+        });
+      });
+    });
+  }, 1800000);
 });
