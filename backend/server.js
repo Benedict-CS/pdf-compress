@@ -60,7 +60,7 @@ class NodeCanvasFactory {
   }
 }
 
-async function compressPDF(inputPath, outputPath, quality = 0.8, scale = 2.0) {
+async function compressPDF(inputPath, outputPath, quality = 0.9, scale = 3.0) {
   const data = new Uint8Array(fs.readFileSync(inputPath));
   const canvasFactory = new NodeCanvasFactory();
 
@@ -76,7 +76,7 @@ async function compressPDF(inputPath, outputPath, quality = 0.8, scale = 2.0) {
   const pdfDoc = await loadingTask.promise;
   const numPages = pdfDoc.numPages;
 
-  console.log(`Starting compression for ${numPages} pages...`);
+  console.log(`Starting high-quality compression for ${numPages} pages...`);
 
   const doc = new PDFDocument({ autoFirstPage: false, compress: true });
   const writeStream = fs.createWriteStream(outputPath);
@@ -87,20 +87,26 @@ async function compressPDF(inputPath, outputPath, quality = 0.8, scale = 2.0) {
     const page = await pdfDoc.getPage(i);
     const viewport = page.getViewport({ scale });
     const canvasAndCtx = canvasFactory.create(viewport.width, viewport.height);
+    const ctx = canvasAndCtx.context;
 
     try {
+      // 1. Fill with pure white background (CRITICAL for sharp text)
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, viewport.width, viewport.height);
+
+      // 2. Render PDF page
       await page.render({
-        canvasContext: canvasAndCtx.context,
+        canvasContext: ctx,
         viewport,
         canvasFactory,
-        // Critical for Node.js to avoid incompatible image objects
         disableCreateImageBitmap: true,
-        intent: 'print', // Higher quality rendering intent
+        intent: 'print',
       }).promise;
 
+      // 3. Export to buffer
       const imgBuffer = canvasAndCtx.canvas.toBuffer('image/jpeg', { quality });
 
-      // Correcting the math: viewport dimensions at scale 1.0 are already in points (72 DPI)
+      // 4. Place in PDF
       const pageW = viewport.width / scale;
       const pageH = viewport.height / scale;
       doc.addPage({ size: [pageW, pageH], margin: 0 });
@@ -125,8 +131,8 @@ app.post('/api/compress', upload.single('file'), async (req, res) => {
   const outputPath = path.join('uploads', `compressed_${req.file.filename}.pdf`);
 
   try {
-    const quality = parseFloat(req.body.quality) || 0.8;
-    const scale = parseFloat(req.body.scale) || 2.0;
+    const quality = parseFloat(req.body.quality) || 0.9;
+    const scale = parseFloat(req.body.scale) || 3.0;
 
     await compressPDF(inputPath, outputPath, quality, scale);
 
