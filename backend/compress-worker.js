@@ -59,6 +59,9 @@ async function compressPDF() {
   const pdfDoc = await loadingTask.promise;
   const numPages = pdfDoc.numPages;
 
+  // Send total pages to parent
+  parentPort.postMessage({ type: 'start', total: numPages });
+
   const doc = new PDFDocument({ autoFirstPage: false, compress: true });
   const writeStream = fs.createWriteStream(outputPath);
   doc.pipe(writeStream);
@@ -86,6 +89,9 @@ async function compressPDF() {
       const pageH = viewport.height / scale;
       doc.addPage({ size: [pageW, pageH], margin: 0 });
       doc.image(imgBuffer, 0, 0, { width: pageW, height: pageH });
+      
+      // Notify progress
+      parentPort.postMessage({ type: 'progress', current: i, total: numPages });
     } finally {
       canvasFactory.destroy(canvasAndCtx);
     }
@@ -102,5 +108,5 @@ async function compressPDF() {
 }
 
 compressPDF()
-  .then(result => parentPort.postMessage(result))
-  .catch(err => parentPort.postMessage({ error: err.message }));
+  .then(result => parentPort.postMessage({ type: 'done', ...result }))
+  .catch(err => parentPort.postMessage({ type: 'error', error: err.message }));

@@ -14,10 +14,11 @@ const upload = multer({
 });
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  exposedHeaders: ['X-Original-Size', 'X-Compressed-Size', 'X-Compression-Time', 'X-Total-Pages']
+}));
 app.use(express.json());
 
-// 3. Rate Limiting: Prevent abuse (max 10 requests per 15 mins per IP)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 15,
@@ -27,23 +28,61 @@ const limiter = rateLimit({
 });
 app.use('/api/compress', limiter);
 
+// In-memory progress tracking
+const activeJobs = new Map();
+
 app.get('/', (req, res) => {
   res.send('PDF Compressor API is online.');
 });
 
-// 4. Worker Threads: Run heavy compression in background thread
-function runCompressionWorker(workerData) {
+// Progress SSE endpoint
+app.get('/api/progress/:jobId', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const { jobId } = req.params;
+  
+  const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+  const interval = setInterval(() => {
+    const job = activeJobs.get(jobId);
+    if (job) {
+      send(job);
+      if (job.status === 'done' || job.status === 'error') {
+        clearInterval(interval);
+        res.end();
+        activeJobs.delete(jobId);
+      }
+    }
+  }, 500);
+
+  req.on('close', () => clearInterval(interval));
+});
+
+function runCompressionWorker(workerData, jobId) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(path.join(__dirname, 'compress-worker.js'), {
       workerData
     });
-    worker.on('message', (result) => {
-      if (result.error) reject(new Error(result.error));
-      else resolve(result);
+    
+    worker.on('message', (msg) => {
+      if (msg.type === 'start') {
+        activeJobs.set(jobId, { status: 'processing', current: 0, total: msg.total });
+      } else if (msg.type === 'progress') {
+        activeJobs.set(jobId, { status: 'processing', current: msg.current, total: msg.total });
+      } else if (msg.type === 'done') {
+        activeJobs.set(jobId, { status: 'done' });
+        resolve(msg);
+      } else if (msg.type === 'error') {
+        activeJobs.set(jobId, { status: 'error', error: msg.error });
+        reject(new Error(msg.error));
+      }
     });
-    worker.on('error', reject);
-    worker.on('exit', (code) => {
-      if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
+    
+    worker.on('error', (err) => {
+      activeJobs.set(jobId, { status: 'error', error: err.message });
+      reject(err);
     });
   });
 }
@@ -51,6 +90,7 @@ function runCompressionWorker(workerData) {
 app.post('/api/compress', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
 
+  const jobId = req.body.jobId || Math.random().toString(36).substring(7);
   const inputPath = req.file.path;
   const outputPath = path.join('uploads', `compressed_${req.file.filename}.pdf`);
 
@@ -59,18 +99,17 @@ app.post('/api/compress', upload.single('file'), async (req, res) => {
     const scale = req.body.scale ? parseFloat(req.body.scale) : 3.0;
 
     const startTime = Date.now();
-    await runCompressionWorker({
+    const result = await runCompressionWorker({
       inputPath,
       outputPath,
       quality,
       scale
-    });
+    }, jobId);
 
     const originalSize = fs.statSync(inputPath).size;
     const compressedSize = fs.statSync(outputPath).size;
     const timeTaken = (Date.now() - startTime) / 1000;
 
-    // 1. Comparison Headers: Send stats to frontend
     res.set({
       'X-Original-Size': originalSize,
       'X-Compressed-Size': compressedSize,
@@ -94,7 +133,6 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
-  // Automated Cleanup: Every 30 minutes, delete files older than 1 hour
   setInterval(() => {
     const uploadsDir = path.join(__dirname, 'uploads');
     fs.readdir(uploadsDir, (err, files) => {
