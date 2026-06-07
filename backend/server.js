@@ -95,12 +95,14 @@ async function compressPDF(inputPath, outputPath, quality = 0.8, scale = 2.0) {
         canvasFactory,
         // Critical for Node.js to avoid incompatible image objects
         disableCreateImageBitmap: true,
+        intent: 'print', // Higher quality rendering intent
       }).promise;
 
       const imgBuffer = canvasAndCtx.canvas.toBuffer('image/jpeg', { quality });
 
-      const pageW = viewport.width / scale * 72 / 96;
-      const pageH = viewport.height / scale * 72 / 96;
+      // Correcting the math: viewport dimensions at scale 1.0 are already in points (72 DPI)
+      const pageW = viewport.width / scale;
+      const pageH = viewport.height / scale;
       doc.addPage({ size: [pageW, pageH], margin: 0 });
       doc.image(imgBuffer, 0, 0, { width: pageW, height: pageH });
     } finally {
