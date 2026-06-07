@@ -5,27 +5,15 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createCanvas, Image, ImageData, DOMMatrix } from 'canvas';
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import PDFDocument from 'pdfkit';
 
-// Aggressive Polyfills for pdfjs-dist in Node.js
-const Canvas = createCanvas(1, 1).constructor;
-globalThis.window = globalThis;
-globalThis.document = {
-  createElement: (name) => {
-    if (name === 'canvas') return createCanvas(1, 1);
-    return {};
-  }
-};
-globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
-globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+// --- EXACT POLYFILLS FROM WORKING SCRIPT ---
 globalThis.Image = Image;
 globalThis.ImageData = ImageData;
 globalThis.DOMMatrix = DOMMatrix;
-globalThis.HTMLElement = class {};
-globalThis.HTMLCanvasElement = Canvas;
-globalThis.HTMLImageElement = Image;
-globalThis.navigator = { userAgent: 'node' };
+// -------------------------------------------
+
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+import PDFDocument from 'pdfkit';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const upload = multer({ dest: 'uploads/' });
@@ -63,10 +51,13 @@ async function compressPDF(inputPath, outputPath, quality = 0.7, scale = 1.2) {
     useWorkerFetch: false,
     isEvalSupported: false,
     disableFontFace: true,
+    useSystemFonts: false, // Aligned with your working script
   });
 
   const pdfDoc = await loadingTask.promise;
   const numPages = pdfDoc.numPages;
+
+  console.log(`Processing ${numPages} pages...`);
 
   const doc = new PDFDocument({ autoFirstPage: false, compress: true });
   const writeStream = fs.createWriteStream(outputPath);
@@ -89,6 +80,9 @@ async function compressPDF(inputPath, outputPath, quality = 0.7, scale = 1.2) {
     const pageH = viewport.height / scale * 72 / 96;
     doc.addPage({ size: [pageW, pageH], margin: 0 });
     doc.image(imgBuffer, 0, 0, { width: pageW, height: pageH });
+    
+    // Help GC
+    canvasFactory.destroy(canvasAndCtx);
   }
 
   doc.end();
@@ -113,7 +107,7 @@ app.post('/api/compress', upload.single('file'), async (req, res) => {
 
     res.download(outputPath, req.file.originalname, (err) => {
       // Cleanup files after download
-      fs.unlinkSync(inputPath);
+      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
       if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
     });
   } catch (error) {
