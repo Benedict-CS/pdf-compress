@@ -27,11 +27,8 @@ function App() {
     formData.append('scale', scale.toString());
 
     try {
-      const apiUrl = window.location.hostname === 'localhost' 
-        ? 'http://localhost:3001/api/compress' 
-        : `http://${window.location.hostname}:3001/api/compress`;
-
-      const response = await fetch(apiUrl, {
+      // Use relative path so Nginx can proxy it to the backend
+      const response = await fetch('/api/compress', {
         method: 'POST',
         body: formData,
       });
