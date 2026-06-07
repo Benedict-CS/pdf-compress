@@ -27,7 +27,11 @@ function App() {
     formData.append('scale', scale.toString());
 
     try {
-      const response = await fetch('http://localhost:3001/api/compress', {
+      const apiUrl = window.location.hostname === 'localhost' 
+        ? 'http://localhost:3001/api/compress' 
+        : `http://${window.location.hostname}:3001/api/compress`;
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
         body: formData,
       });
