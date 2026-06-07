@@ -60,7 +60,7 @@ class NodeCanvasFactory {
   }
 }
 
-async function compressPDF(inputPath, outputPath, quality = 0.7, scale = 1.2) {
+async function compressPDF(inputPath, outputPath, quality = 0.8, scale = 2.0) {
   const data = new Uint8Array(fs.readFileSync(inputPath));
   const canvasFactory = new NodeCanvasFactory();
 
@@ -123,8 +123,8 @@ app.post('/api/compress', upload.single('file'), async (req, res) => {
   const outputPath = path.join('uploads', `compressed_${req.file.filename}.pdf`);
 
   try {
-    const quality = parseFloat(req.body.quality) || 0.7;
-    const scale = parseFloat(req.body.scale) || 1.2;
+    const quality = parseFloat(req.body.quality) || 0.8;
+    const scale = parseFloat(req.body.scale) || 2.0;
 
     await compressPDF(inputPath, outputPath, quality, scale);
 

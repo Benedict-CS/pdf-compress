@@ -93,36 +93,36 @@ function App() {
                   <span className="text-slate-400 text-xs mt-1">Maximum 50MB</span>
                 </>
               )}
-            </div>
-          </div>
-
-          {/* Settings */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Quality</label>
-              <select 
-                value={quality} 
-                onChange={(e) => setQuality(Number(e.target.value))}
-                className="w-full bg-slate-100 border-none rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
-              >
-                <option value={0.5}>Low (Smaller size)</option>
-                <option value={0.7}>Medium</option>
-                <option value={0.9}>High</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Scale</label>
-              <select 
-                value={scale} 
-                onChange={(e) => setScale(Number(e.target.value))}
-                className="w-full bg-slate-100 border-none rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
-              >
-                <option value={0.8}>0.8x (Fastest)</option>
-                <option value={1.2}>1.2x (Recommended)</option>
-                <option value={1.5}>1.5x (Sharpest)</option>
-              </select>
-            </div>
-          </div>
+            const [quality, setQuality] = useState(0.8);
+            const [scale, setScale] = useState(2.0);
+            ...
+                    {/* Settings */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Quality</label>
+                        <select 
+                          value={quality} 
+                          onChange={(e) => setQuality(Number(e.target.value))}
+                          className="w-full bg-slate-100 border-none rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value={0.6}>Balanced (Smaller)</option>
+                          <option value={0.8}>High (Recommended)</option>
+                          <option value={1.0}>Original (No compression)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Resolution</label>
+                        <select 
+                          value={scale} 
+                          onChange={(e) => setScale(Number(e.target.value))}
+                          className="w-full bg-slate-100 border-none rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value={1.5}>1.5x (Fast)</option>
+                          <option value={2.0}>2.0x (Standard)</option>
+                          <option value={3.0}>3.0x (Retina)</option>
+                        </select>
+                      </div>
+                    </div>
 
           {error && (
             <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg text-sm border border-red-100">
