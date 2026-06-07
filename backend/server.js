@@ -20,6 +20,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get('/', (req, res) => {
+  res.send('PDF Compressor API is online.');
+});
+
 class NodeCanvasFactory {
   create(width, height) {
     const canvas = createCanvas(width, height);
