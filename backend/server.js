@@ -4,123 +4,47 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createCanvas, Image, ImageData, DOMMatrix } from 'canvas';
-
-// --- BULLETPROOF POLYFILLS FOR PDFJS-DIST ---
-const Canvas = createCanvas(1, 1).constructor;
-const polyfills = {
-  window: global,
-  document: {
-    createElement: (name) => {
-      if (name === 'canvas') return createCanvas(1, 1);
-      return {};
-    }
-  },
-  Image: Image,
-  ImageData: ImageData,
-  DOMMatrix: DOMMatrix,
-  HTMLElement: class {},
-  HTMLCanvasElement: Canvas,
-  HTMLImageElement: Image,
-  requestAnimationFrame: (cb) => setTimeout(cb, 0),
-  cancelAnimationFrame: (id) => clearTimeout(id),
-  navigator: { userAgent: 'node' }
-};
-
-Object.assign(global, polyfills);
-Object.assign(globalThis, polyfills);
-// --------------------------------------------
-
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import PDFDocument from 'pdfkit';
+import { Worker } from 'worker_threads';
+import { rateLimit } from 'express-rate-limit';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({ 
+  dest: 'uploads/',
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+});
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 3. Rate Limiting: Prevent abuse (max 10 requests per 15 mins per IP)
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: 'Too many requests from this IP, please try again after 15 minutes',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/compress', limiter);
+
 app.get('/', (req, res) => {
   res.send('PDF Compressor API is online.');
 });
 
-class NodeCanvasFactory {
-  create(width, height) {
-    const canvas = createCanvas(width, height);
-    return { canvas, context: canvas.getContext('2d') };
-  }
-  reset(canvasAndContext, width, height) {
-    canvasAndContext.canvas.width = width;
-    canvasAndContext.canvas.height = height;
-  }
-  destroy(canvasAndContext) {
-    canvasAndContext.canvas.width = 0;
-    canvasAndContext.canvas.height = 0;
-  }
-}
-
-async function compressPDF(inputPath, outputPath, quality = 0.9, scale = 3.0) {
-  const data = new Uint8Array(fs.readFileSync(inputPath));
-  const canvasFactory = new NodeCanvasFactory();
-
-  const loadingTask = pdfjsLib.getDocument({
-    data,
-    canvasFactory,
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    disableFontFace: true,
-    useSystemFonts: false,
-  });
-
-  const pdfDoc = await loadingTask.promise;
-  const numPages = pdfDoc.numPages;
-
-  console.log(`Starting compression for ${numPages} pages...`);
-
-  const doc = new PDFDocument({ autoFirstPage: false, compress: true });
-  const writeStream = fs.createWriteStream(outputPath);
-  doc.pipe(writeStream);
-
-  for (let i = 1; i <= numPages; i++) {
-    console.log(`Processing page ${i}/${numPages}...`);
-    const page = await pdfDoc.getPage(i);
-    const viewport = page.getViewport({ scale });
-    const canvasAndCtx = canvasFactory.create(viewport.width, viewport.height);
-    const ctx = canvasAndCtx.context;
-
-    try {
-      // 1. Fill with pure white background (CRITICAL for sharp text)
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, viewport.width, viewport.height);
-
-      // 2. Render PDF page
-      await page.render({
-        canvasContext: ctx,
-        viewport,
-        canvasFactory,
-        disableCreateImageBitmap: true,
-        intent: 'print',
-      }).promise;
-
-      // 3. Export to buffer (JPEG only for stability and quality)
-      const imgBuffer = canvasAndCtx.canvas.toBuffer('image/jpeg', { quality });
-
-      // 4. Place in PDF
-      const pageW = viewport.width / scale;
-      const pageH = viewport.height / scale;
-      doc.addPage({ size: [pageW, pageH], margin: 0 });
-      doc.image(imgBuffer, 0, 0, { width: pageW, height: pageH });
-    } finally {
-      canvasFactory.destroy(canvasAndCtx);
-    }
-  }
-
-  doc.end();
-
+// 4. Worker Threads: Run heavy compression in background thread
+function runCompressionWorker(workerData) {
   return new Promise((resolve, reject) => {
-    writeStream.on('finish', resolve);
-    writeStream.on('error', reject);
+    const worker = new Worker(path.join(__dirname, 'compress-worker.js'), {
+      workerData
+    });
+    worker.on('message', (result) => {
+      if (result.error) reject(new Error(result.error));
+      else resolve(result);
+    });
+    worker.on('error', reject);
+    worker.on('exit', (code) => {
+      if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
+    });
   });
 }
 
@@ -134,14 +58,26 @@ app.post('/api/compress', upload.single('file'), async (req, res) => {
     const quality = req.body.quality ? parseFloat(req.body.quality) : 0.9;
     const scale = req.body.scale ? parseFloat(req.body.scale) : 3.0;
 
-    await compressPDF(inputPath, outputPath, quality, scale);
+    const startTime = Date.now();
+    await runCompressionWorker({
+      inputPath,
+      outputPath,
+      quality,
+      scale
+    });
 
-    if (!fs.existsSync(outputPath)) {
-        throw new Error('Compressed file was not created.');
-    }
+    const originalSize = fs.statSync(inputPath).size;
+    const compressedSize = fs.statSync(outputPath).size;
+    const timeTaken = (Date.now() - startTime) / 1000;
+
+    // 1. Comparison Headers: Send stats to frontend
+    res.set({
+      'X-Original-Size': originalSize,
+      'X-Compressed-Size': compressedSize,
+      'X-Compression-Time': timeTaken
+    });
 
     res.download(outputPath, req.file.originalname, (err) => {
-      // Cleanup files after download
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
       if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
     });
