@@ -16,36 +16,47 @@ interface Progress {
 
 function App() {
   const [file, setFile] = useState<File | null>(null);
-  const [quality, setQuality] = useState(0.9);
-  const [scale, setScale] = useState(3.0);
+  const [quality, setQuality] = useState(() => Number(localStorage.getItem('pdf-quality')) || 0.9);
+  const [scale, setScale] = useState(() => Number(localStorage.getItem('pdf-scale')) || 3.0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isPreviewing, setIsPreviewing] = useState(false);
 
   const jobIdRef = useRef<string>("");
+
+  // Persist settings
+  useEffect(() => {
+    localStorage.setItem('pdf-quality', quality.toString());
+  }, [quality]);
+
+  useEffect(() => {
+    localStorage.setItem('pdf-scale', scale.toString());
+  }, [scale]);
+
+  const validateFile = (selectedFile: File) => {
+    if (selectedFile.type !== 'application/pdf') {
+      setError('Only PDF files are supported.');
+      return false;
+    }
+    if (selectedFile.size > 50 * 1024 * 1024) {
+      setError('File size exceeds the 50MB limit.');
+      return false;
+    }
+    return true;
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selected = e.target.files[0];
-      setFile(selected);
-      setError(null);
-      setStats(null);
-      setProgress(null);
-      setPreviewUrl(null);
+      if (validateFile(selected)) {
+        setFile(selected);
+        setError(null);
+        setStats(null);
+        setProgress(null);
+      }
     }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -53,14 +64,11 @@ function App() {
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const droppedFile = e.dataTransfer.files[0];
-      if (droppedFile.type === 'application/pdf') {
+      if (validateFile(droppedFile)) {
         setFile(droppedFile);
         setError(null);
         setStats(null);
         setProgress(null);
-        setPreviewUrl(null);
-      } else {
-        setError('Only PDF files are supported.');
       }
     }
   };
