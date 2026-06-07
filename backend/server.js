@@ -6,27 +6,30 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createCanvas, Image, ImageData, DOMMatrix } from 'canvas';
 
-// --- COMPREHENSIVE POLYFILLS FOR PDFJS-DIST V5 + NODE-CANVAS ---
-const dummyCanvas = createCanvas(1, 1);
-const CanvasPrototype = dummyCanvas.constructor;
-
-globalThis.window = globalThis;
-globalThis.document = {
-  createElement: (name) => {
-    if (name === 'canvas') return createCanvas(1, 1);
-    return {};
-  }
+// --- BULLETPROOF POLYFILLS FOR PDFJS-DIST ---
+const Canvas = createCanvas(1, 1).constructor;
+const polyfills = {
+  window: global,
+  document: {
+    createElement: (name) => {
+      if (name === 'canvas') return createCanvas(1, 1);
+      return {};
+    }
+  },
+  Image: Image,
+  ImageData: ImageData,
+  DOMMatrix: DOMMatrix,
+  HTMLElement: class {},
+  HTMLCanvasElement: Canvas,
+  HTMLImageElement: Image,
+  requestAnimationFrame: (cb) => setTimeout(cb, 0),
+  cancelAnimationFrame: (id) => clearTimeout(id),
+  navigator: { userAgent: 'node' }
 };
-globalThis.Image = Image;
-globalThis.ImageData = ImageData;
-globalThis.DOMMatrix = DOMMatrix;
-globalThis.HTMLElement = class {};
-globalThis.HTMLCanvasElement = CanvasPrototype;
-globalThis.HTMLImageElement = Image;
-globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
-globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
-globalThis.navigator = { userAgent: 'node' };
-// -----------------------------------------------------------
+
+Object.assign(global, polyfills);
+Object.assign(globalThis, polyfills);
+// --------------------------------------------
 
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import PDFDocument from 'pdfkit';
@@ -67,38 +70,42 @@ async function compressPDF(inputPath, outputPath, quality = 0.7, scale = 1.2) {
     useWorkerFetch: false,
     isEvalSupported: false,
     disableFontFace: true,
-    useSystemFonts: false, // Aligned with your working script
+    useSystemFonts: false,
   });
 
   const pdfDoc = await loadingTask.promise;
   const numPages = pdfDoc.numPages;
 
-  console.log(`Processing ${numPages} pages...`);
+  console.log(`Starting compression for ${numPages} pages...`);
 
   const doc = new PDFDocument({ autoFirstPage: false, compress: true });
   const writeStream = fs.createWriteStream(outputPath);
   doc.pipe(writeStream);
 
   for (let i = 1; i <= numPages; i++) {
+    console.log(`Processing page ${i}/${numPages}...`);
     const page = await pdfDoc.getPage(i);
     const viewport = page.getViewport({ scale });
     const canvasAndCtx = canvasFactory.create(viewport.width, viewport.height);
 
-    await page.render({
-      canvasContext: canvasAndCtx.context,
-      viewport,
-      canvasFactory,
-    }).promise;
+    try {
+      await page.render({
+        canvasContext: canvasAndCtx.context,
+        viewport,
+        canvasFactory,
+        // Critical for Node.js to avoid incompatible image objects
+        disableCreateImageBitmap: true,
+      }).promise;
 
-    const imgBuffer = canvasAndCtx.canvas.toBuffer('image/jpeg', { quality });
+      const imgBuffer = canvasAndCtx.canvas.toBuffer('image/jpeg', { quality });
 
-    const pageW = viewport.width / scale * 72 / 96;
-    const pageH = viewport.height / scale * 72 / 96;
-    doc.addPage({ size: [pageW, pageH], margin: 0 });
-    doc.image(imgBuffer, 0, 0, { width: pageW, height: pageH });
-    
-    // Help GC
-    canvasFactory.destroy(canvasAndCtx);
+      const pageW = viewport.width / scale * 72 / 96;
+      const pageH = viewport.height / scale * 72 / 96;
+      doc.addPage({ size: [pageW, pageH], margin: 0 });
+      doc.image(imgBuffer, 0, 0, { width: pageW, height: pageH });
+    } finally {
+      canvasFactory.destroy(canvasAndCtx);
+    }
   }
 
   doc.end();
@@ -121,6 +128,10 @@ app.post('/api/compress', upload.single('file'), async (req, res) => {
 
     await compressPDF(inputPath, outputPath, quality, scale);
 
+    if (!fs.existsSync(outputPath)) {
+        throw new Error('Compressed file was not created.');
+    }
+
     res.download(outputPath, req.file.originalname, (err) => {
       // Cleanup files after download
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
@@ -130,6 +141,7 @@ app.post('/api/compress', upload.single('file'), async (req, res) => {
     console.error('Compression error:', error);
     res.status(500).send('Error processing PDF: ' + error.message);
     if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
   }
 });
 
