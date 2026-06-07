@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileUp, FileDown, Loader2, AlertCircle } from 'lucide-react';
+import { FileUp, FileDown, Loader2, AlertCircle, Github } from 'lucide-react';
 
 function App() {
   const [file, setFile] = useState<File | null>(null);
@@ -162,6 +162,18 @@ function App() {
               </>
             )}
           </button>
+        </div>
+
+        <div className="bg-slate-50 p-4 border-t border-slate-100 flex justify-center">
+          <a 
+            href="https://github.com/Benedict-CS/pdf-compress" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-slate-400 hover:text-slate-600 transition-colors text-sm font-medium"
+          >
+            <Github size={18} />
+            <span>View on GitHub</span>
+          </a>
         </div>
       </div>
     </div>
