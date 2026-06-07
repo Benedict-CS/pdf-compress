@@ -59,6 +59,15 @@ function App() {
     }
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
@@ -146,40 +155,6 @@ function App() {
     }
   };
 
-  // Instant local preview (renders first page using canvas)
-  useEffect(() => {
-    if (!file || isProcessing) return;
-
-    const renderPreview = async () => {
-      setIsPreviewing(true);
-      try {
-        const fileReader = new FileReader();
-        fileReader.onload = async () => {
-          const typedarray = new Uint8Array(fileReader.result as ArrayBuffer);
-          // @ts-ignore
-          const pdfjsLib = window['pdfjs-dist/build/pdf'];
-          if (!pdfjsLib) {
-             // Load script if not available (rare in modern builds)
-             const script = document.createElement('script');
-             script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs';
-             script.type = 'module';
-             // document.head.appendChild(script);
-          }
-          
-          // For now, we will use a simpler "preview pending" logic if pdf.js is heavy to bundle
-          // Let's implement a clean CSS-based preview placeholder or actual rendering if possible
-        };
-        fileReader.readAsArrayBuffer(file);
-      } catch (e) {
-        console.error("Preview failed", e);
-      } finally {
-        setIsPreviewing(false);
-      }
-    };
-
-    renderPreview();
-  }, [file, quality, scale]);
-
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-2 md:p-4 font-sans overflow-x-hidden text-slate-900">
       <div className="w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row border border-slate-200">
@@ -214,7 +189,7 @@ function App() {
               <div className="flex flex-col items-center">
                 {file ? (
                   <>
-                    <div className="bg-white p-3 rounded-2xl shadow-xl mb-3 text-blue-600 rotate-2 group-hover:rotate-0 transition-transform">
+                    <div className="bg-white p-3 rounded-2xl shadow-xl mb-3 text-blue-600 rotate-2">
                       <FileDown size={32} />
                     </div>
                     <span className="font-bold text-sm truncate max-w-full px-2 block">{file.name}</span>
@@ -340,10 +315,10 @@ function App() {
                 ) : (
                   <><FileDown size={20} /><span className="uppercase tracking-[0.2em] text-sm">Compress</span></>
                 )}
-                </button>
-                <p className="text-center text-[9px] text-slate-400 font-bold leading-none mt-4 uppercase tracking-[0.1em] opacity-60">
+              </button>
+              <p className="text-center text-[9px] text-slate-400 font-bold leading-none mt-4 uppercase tracking-[0.1em] opacity-60">
                 Auto-delete after compress • 100% Privacy
-                </p>
+              </p>
             </div>
           </div>
         </div>
