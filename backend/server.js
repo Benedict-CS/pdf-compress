@@ -60,7 +60,7 @@ class NodeCanvasFactory {
   }
 }
 
-async function compressPDF(inputPath, outputPath, quality = 0.9, scale = 3.0) {
+async function compressPDF(inputPath, outputPath, quality = 0.9, scale = 3.0, format = 'jpeg') {
   const data = new Uint8Array(fs.readFileSync(inputPath));
   const canvasFactory = new NodeCanvasFactory();
 
@@ -76,7 +76,7 @@ async function compressPDF(inputPath, outputPath, quality = 0.9, scale = 3.0) {
   const pdfDoc = await loadingTask.promise;
   const numPages = pdfDoc.numPages;
 
-  console.log(`Starting high-quality compression for ${numPages} pages...`);
+  console.log(`Starting compression (${format}) for ${numPages} pages...`);
 
   const doc = new PDFDocument({ autoFirstPage: false, compress: true });
   const writeStream = fs.createWriteStream(outputPath);
@@ -103,8 +103,13 @@ async function compressPDF(inputPath, outputPath, quality = 0.9, scale = 3.0) {
         intent: 'print',
       }).promise;
 
-      // 3. Export to buffer
-      const imgBuffer = canvasAndCtx.canvas.toBuffer('image/jpeg', { quality });
+      // 3. Export to buffer based on format
+      let imgBuffer;
+      if (format === 'png') {
+        imgBuffer = canvasAndCtx.canvas.toBuffer('image/png');
+      } else {
+        imgBuffer = canvasAndCtx.canvas.toBuffer('image/jpeg', { quality });
+      }
 
       // 4. Place in PDF
       const pageW = viewport.width / scale;
@@ -131,10 +136,11 @@ app.post('/api/compress', upload.single('file'), async (req, res) => {
   const outputPath = path.join('uploads', `compressed_${req.file.filename}.pdf`);
 
   try {
-    const quality = parseFloat(req.body.quality) || 0.9;
-    const scale = parseFloat(req.body.scale) || 3.0;
+    const quality = req.body.quality ? parseFloat(req.body.quality) : 0.9;
+    const scale = req.body.scale ? parseFloat(req.body.scale) : 3.0;
+    const format = req.body.format || 'jpeg';
 
-    await compressPDF(inputPath, outputPath, quality, scale);
+    await compressPDF(inputPath, outputPath, quality, scale, format);
 
     if (!fs.existsSync(outputPath)) {
         throw new Error('Compressed file was not created.');
