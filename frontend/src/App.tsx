@@ -328,14 +328,14 @@ function App() {
                 }`}
               >
                 {isProcessing ? (
-                  <><Loader2 className="animate-spin" size={20} /><span className="uppercase tracking-widest">Processing...</span></>
+                  <><Loader2 className="animate-spin" size={20} /><span className="uppercase tracking-widest text-sm">Processing...</span></>
                 ) : (
-                  <><FileDown size={20} /><span className="uppercase tracking-[0.2em] text-sm">Download</span></>
+                  <><FileDown size={20} /><span className="uppercase tracking-[0.2em] text-sm">Compress</span></>
                 )}
-              </button>
-              <p className="text-center text-[9px] text-slate-400 font-bold leading-none mt-4 uppercase tracking-[0.1em] opacity-60">
-                Processed locally • 100% Privacy • Auto-Cleanup
-              </p>
+                </button>
+                <p className="text-center text-[9px] text-slate-400 font-bold leading-none mt-4 uppercase tracking-[0.1em] opacity-60">
+                Auto-delete after compress • 100% Privacy
+                </p>
             </div>
           </div>
         </div>
