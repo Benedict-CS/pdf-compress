@@ -3,8 +3,8 @@ import { FileUp, FileDown, Loader2, AlertCircle } from 'lucide-react';
 
 function App() {
   const [file, setFile] = useState<File | null>(null);
-  const [quality, setQuality] = useState(0.7);
-  const [scale, setScale] = useState(1.2);
+  const [quality, setQuality] = useState(0.8);
+  const [scale, setScale] = useState(2.0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,36 +93,36 @@ function App() {
                   <span className="text-slate-400 text-xs mt-1">Maximum 50MB</span>
                 </>
               )}
-            const [quality, setQuality] = useState(0.8);
-            const [scale, setScale] = useState(2.0);
-            ...
-                    {/* Settings */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Quality</label>
-                        <select 
-                          value={quality} 
-                          onChange={(e) => setQuality(Number(e.target.value))}
-                          className="w-full bg-slate-100 border-none rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value={0.6}>Balanced (Smaller)</option>
-                          <option value={0.8}>High (Recommended)</option>
-                          <option value={1.0}>Original (No compression)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Resolution</label>
-                        <select 
-                          value={scale} 
-                          onChange={(e) => setScale(Number(e.target.value))}
-                          className="w-full bg-slate-100 border-none rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value={1.5}>1.5x (Fast)</option>
-                          <option value={2.0}>2.0x (Standard)</option>
-                          <option value={3.0}>3.0x (Retina)</option>
-                        </select>
-                      </div>
-                    </div>
+            </div>
+          </div>
+
+          {/* Settings */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Quality</label>
+              <select 
+                value={quality} 
+                onChange={(e) => setQuality(Number(e.target.value))}
+                className="w-full bg-slate-100 border-none rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={0.6}>Balanced (Smaller)</option>
+                <option value={0.8}>High (Recommended)</option>
+                <option value={1.0}>Original (No compression)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Resolution</label>
+              <select 
+                value={scale} 
+                onChange={(e) => setScale(Number(e.target.value))}
+                className="w-full bg-slate-100 border-none rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={1.5}>1.5x (Fast)</option>
+                <option value={2.0}>2.0x (Standard)</option>
+                <option value={3.0}>3.0x (Retina)</option>
+              </select>
+            </div>
+          </div>
 
           {error && (
             <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg text-sm border border-red-100">
