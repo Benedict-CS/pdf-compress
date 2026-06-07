@@ -6,11 +6,27 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createCanvas, Image, ImageData, DOMMatrix } from 'canvas';
 
-// --- EXACT POLYFILLS FROM WORKING SCRIPT ---
+// --- COMPREHENSIVE POLYFILLS FOR PDFJS-DIST V5 + NODE-CANVAS ---
+const dummyCanvas = createCanvas(1, 1);
+const CanvasPrototype = dummyCanvas.constructor;
+
+globalThis.window = globalThis;
+globalThis.document = {
+  createElement: (name) => {
+    if (name === 'canvas') return createCanvas(1, 1);
+    return {};
+  }
+};
 globalThis.Image = Image;
 globalThis.ImageData = ImageData;
 globalThis.DOMMatrix = DOMMatrix;
-// -------------------------------------------
+globalThis.HTMLElement = class {};
+globalThis.HTMLCanvasElement = CanvasPrototype;
+globalThis.HTMLImageElement = Image;
+globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+globalThis.navigator = { userAgent: 'node' };
+// -----------------------------------------------------------
 
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import PDFDocument from 'pdfkit';
