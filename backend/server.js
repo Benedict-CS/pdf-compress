@@ -8,12 +8,20 @@ import { createCanvas, Image, ImageData, DOMMatrix } from 'canvas';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import PDFDocument from 'pdfkit';
 
-// Polyfills for pdfjs
+// Aggressive Polyfills for pdfjs-dist in Node.js
+const Canvas = createCanvas(1, 1).constructor;
+globalThis.window = globalThis;
+globalThis.document = {
+  createElement: (name) => {
+    if (name === 'canvas') return createCanvas(1, 1);
+    return {};
+  }
+};
 globalThis.Image = Image;
 globalThis.ImageData = ImageData;
 globalThis.DOMMatrix = DOMMatrix;
 globalThis.HTMLElement = class {};
-globalThis.HTMLCanvasElement = class {};
+globalThis.HTMLCanvasElement = Canvas;
 globalThis.HTMLImageElement = Image;
 globalThis.navigator = { userAgent: 'node' };
 
