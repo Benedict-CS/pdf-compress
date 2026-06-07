@@ -97,30 +97,41 @@ function App() {
           </div>
 
           {/* Settings */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Quality</label>
-              <select 
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-semibold text-slate-500 uppercase">Image Quality</label>
+                <span className="text-xs font-bold text-blue-600">{Math.round(quality * 100)}%</span>
+              </div>
+              <input 
+                type="range" 
+                min="0.1" max="1.0" step="0.05"
                 value={quality} 
                 onChange={(e) => setQuality(Number(e.target.value))}
-                className="w-full bg-slate-100 border-none rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
-              >
-                <option value={0.6}>Balanced (Smaller)</option>
-                <option value={0.8}>High (Recommended)</option>
-                <option value={1.0}>Original (No compression)</option>
-              </select>
+                className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+              />
+              <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                <span>Smallest File</span>
+                <span>Best Quality</span>
+              </div>
             </div>
+
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Resolution</label>
-              <select 
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-semibold text-slate-500 uppercase">Resolution (Scale)</label>
+                <span className="text-xs font-bold text-blue-600">{scale.toFixed(1)}x</span>
+              </div>
+              <input 
+                type="range" 
+                min="0.5" max="4.0" step="0.5"
                 value={scale} 
                 onChange={(e) => setScale(Number(e.target.value))}
-                className="w-full bg-slate-100 border-none rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
-              >
-                <option value={1.5}>1.5x (Fast)</option>
-                <option value={2.0}>2.0x (Standard)</option>
-                <option value={3.0}>3.0x (Retina)</option>
-              </select>
+                className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+              />
+              <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                <span>Blurry (Smallest)</span>
+                <span>Sharp (Largest)</span>
+              </div>
             </div>
           </div>
 
