@@ -43,7 +43,7 @@ class NodeCanvasFactory {
 }
 
 async function processTask() {
-  const { type, inputPath, outputPath, quality, scale } = workerData;
+  const { type, inputPath, outputPath, quality, scale, pageConfigs } = workerData;
   const data = new Uint8Array(fs.readFileSync(inputPath));
   const canvasFactory = new NodeCanvasFactory();
 
@@ -58,18 +58,49 @@ async function processTask() {
 
   const pdfDoc = await loadingTask.promise;
 
-  // --- PREVIEW MODE: Only render first page and exit ---
+  // --- THUMBNAILS MODE: Render multiple pages as base64 ---
+  if (type === 'thumbnails') {
+    const count = pdfDoc.numPages;
+    const thumbs = [];
+    const limit = Math.min(count, 50); // Hard limit for safety
+    
+    for (let i = 1; i <= limit; i++) {
+      const page = await pdfDoc.getPage(i);
+      const viewport = page.getViewport({ scale: 0.5 }); // Small scale for thumbs
+      const canvasAndCtx = canvasFactory.create(viewport.width, viewport.height);
+      
+      try {
+        canvasAndCtx.context.fillStyle = 'white';
+        canvasAndCtx.context.fillRect(0, 0, viewport.width, viewport.height);
+        await page.render({
+          canvasContext: canvasAndCtx.context,
+          viewport,
+          canvasFactory,
+          disableCreateImageBitmap: true
+        }).promise;
+        thumbs.push({
+          id: i,
+          src: `data:image/jpeg;base64,${canvasAndCtx.canvas.toBuffer('image/jpeg', { quality: 0.6 }).toString('base64')}`
+        });
+      } finally {
+        canvasFactory.destroy(canvasAndCtx);
+      }
+    }
+    return { success: true, thumbnails: thumbs, totalPages: count };
+  }
+
+  // --- PREVIEW MODE: Only render first page ---
   if (type === 'preview') {
     const page = await pdfDoc.getPage(1);
-    const viewport = page.getViewport({ scale: 1.5 }); // High enough for preview
+    const rotation = pageConfigs?.[0]?.rotation || 0;
+    const viewport = page.getViewport({ scale: 1.5, rotation });
     const canvasAndCtx = canvasFactory.create(viewport.width, viewport.height);
-    const ctx = canvasAndCtx.context;
 
     try {
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, viewport.width, viewport.height);
+      canvasAndCtx.context.fillStyle = 'white';
+      canvasAndCtx.context.fillRect(0, 0, viewport.width, viewport.height);
       await page.render({
-        canvasContext: ctx,
+        canvasContext: canvasAndCtx.context,
         viewport,
         canvasFactory,
         disableCreateImageBitmap: true,
@@ -83,17 +114,21 @@ async function processTask() {
     }
   }
 
-  // --- COMPRESS MODE: Full PDF re-generation ---
-  const numPages = pdfDoc.numPages;
+  // --- COMPRESS MODE: Full PDF with Page Logic ---
+  // Use provided pageConfigs if available, otherwise just do all pages
+  const finalConfigs = pageConfigs || Array.from({ length: pdfDoc.numPages }, (_, i) => ({ index: i + 1, rotation: 0 }));
+  const numPages = finalConfigs.length;
+  
   parentPort.postMessage({ type: 'start', total: numPages });
 
   const doc = new PDFDocument({ autoFirstPage: false, compress: true });
   const writeStream = fs.createWriteStream(outputPath);
   doc.pipe(writeStream);
 
-  for (let i = 1; i <= numPages; i++) {
-    const page = await pdfDoc.getPage(i);
-    const viewport = page.getViewport({ scale });
+  for (let i = 0; i < numPages; i++) {
+    const config = finalConfigs[i];
+    const page = await pdfDoc.getPage(config.index);
+    const viewport = page.getViewport({ scale, rotation: config.rotation || 0 });
     const canvasAndCtx = canvasFactory.create(viewport.width, viewport.height);
     const ctx = canvasAndCtx.context;
 
@@ -115,7 +150,7 @@ async function processTask() {
       doc.addPage({ size: [pageW, pageH], margin: 0 });
       doc.image(imgBuffer, 0, 0, { width: pageW, height: pageH });
       
-      parentPort.postMessage({ type: 'progress', current: i, total: numPages });
+      parentPort.postMessage({ type: 'progress', current: i + 1, total: numPages });
     } finally {
       canvasFactory.destroy(canvasAndCtx);
     }

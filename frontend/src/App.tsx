@@ -1,9 +1,35 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { FileUp, FileDown, Loader2, AlertCircle, Github, CheckCircle2, TrendingDown, Eye, Share2, Copy, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { FileUp, FileDown, Loader2, AlertCircle, Github, CheckCircle2, TrendingDown, Eye, Share2, Copy, Check, RotateCw, Trash2, GripVertical } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface Stats { original: number; compressed: number; reduction: string; jobId: string; }
 interface Progress { status: string; current: number; total: number; }
+interface PageConfig { id: string; index: number; rotation: number; src: string; }
+
+// --- Sortable Thumbnail Item ---
+const SortablePage = ({ page, onRotate, onDelete }: { page: PageConfig, onRotate: (id: string) => void, onDelete: (id: string) => void }) => {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: page.id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  return (
+    <div ref={setNodeRef} style={style} className="relative group bg-slate-50 rounded-lg p-2 border border-slate-200 flex flex-col items-center">
+      <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 bg-white rounded shadow-sm z-10" {...attributes} {...listeners}>
+        <GripVertical size={12} className="text-slate-400" />
+      </div>
+      <div className="w-full aspect-[3/4] overflow-hidden rounded shadow-sm bg-white relative">
+        <img src={page.src} className="w-full h-full object-cover transition-transform duration-300" style={{ transform: `rotate(${page.rotation}deg)` }} />
+      </div>
+      <div className="flex gap-2 mt-2">
+        <button onClick={() => onRotate(page.id)} className="p-1.5 hover:bg-blue-100 text-blue-600 rounded-md transition-colors"><RotateCw size={14} /></button>
+        <button onClick={() => onDelete(page.id)} className="p-1.5 hover:bg-red-100 text-red-600 rounded-md transition-colors"><Trash2 size={14} /></button>
+      </div>
+      <span className="text-[9px] font-black text-slate-400 mt-1 uppercase">Page {page.index}</span>
+    </div>
+  );
+};
 
 function App() {
   const [file, setFile] = useState<File | null>(null);
@@ -14,62 +40,59 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [pages, setPages] = useState<PageConfig[]>([]);
+  const [loadingPages, setLoadingPages] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
   useEffect(() => { localStorage.setItem('pdf-quality', quality.toString()); }, [quality]);
   useEffect(() => { localStorage.setItem('pdf-scale', scale.toString()); }, [scale]);
 
-  const validateFile = (f: File) => {
-    if (f.type !== 'application/pdf') { setError('Only PDF files supported.'); return false; }
-    if (f.size > 50 * 1024 * 1024) { setError('File exceeds 50MB limit.'); return false; }
-    return true;
-  };
-
-  const updatePreview = async (f: File, q: number) => {
-    setIsPreviewing(true);
-    const formData = new FormData();
-    formData.append('file', f);
-    formData.append('quality', q.toString());
-    formData.append('scale', '1.0');
+  const loadThumbnails = async (f: File) => {
+    setLoadingPages(true);
+    const fd = new FormData(); fd.append('file', f);
     try {
-      const res = await fetch('/api/preview', { method: 'POST', body: formData });
-      if (res.ok) { const data = await res.json(); setPreview(data.preview); }
-    } catch (e) { console.error("Preview failed"); }
-    finally { setIsPreviewing(false); }
+      const res = await fetch('/api/thumbnails', { method: 'POST', body: fd });
+      if (res.ok) {
+        const data = await res.json();
+        setPages(data.thumbnails.map((t: any) => ({ id: Math.random().toString(36).substr(2, 9), index: t.id, rotation: 0, src: t.src })));
+      }
+    } catch (e) { setError('Failed to load page previews.'); }
+    finally { setLoadingPages(false); }
   };
-
-  useEffect(() => { if (file) updatePreview(file, quality); }, [file, quality]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0] && validateFile(e.target.files[0])) {
-      setFile(e.target.files[0]); setError(null); setStats(null); setProgress(null); setPreview(null);
+    if (e.target.files?.[0]) {
+      const f = e.target.files[0];
+      if (f.type !== 'application/pdf') { setError('Only PDF files supported.'); return; }
+      setFile(f); setError(null); setStats(null); loadThumbnails(f);
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault(); setIsDragging(false);
-    if (e.dataTransfer.files?.[0] && validateFile(e.dataTransfer.files[0])) {
-      setFile(e.dataTransfer.files[0]); setError(null); setStats(null); setProgress(null); setPreview(null);
+  const onRotate = (id: string) => setPages(prev => prev.map(p => p.id === id ? { ...p, rotation: (p.rotation + 90) % 360 } : p));
+  const onDelete = (id: string) => setPages(prev => prev.filter(p => p.id !== id));
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setPages((items) => {
+        const oldIndex = items.findIndex(i => i.id === active.id);
+        const newIndex = items.findIndex(i => i.id === over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
     }
-  };
-
-  const formatSize = (b: number) => {
-    if (b === 0) return '0 B';
-    const i = Math.floor(Math.log(b) / Math.log(1024));
-    return (b / Math.pow(1024, i)).toFixed(1) + ' ' + ['B', 'KB', 'MB', 'GB'][i];
   };
 
   const handleCompress = async () => {
     if (!file) return;
-    setIsProcessing(true); setError(null); setStats(null); setCopied(false);
+    setIsProcessing(true); setError(null); setStats(null);
     const jobId = Math.random().toString(36).substring(7);
     const es = new EventSource(`/api/progress/${jobId}`);
     es.onmessage = (e) => { const d = JSON.parse(e.data); if (d.status === 'processing') setProgress(d); };
     
     const fd = new FormData();
     fd.append('file', file); fd.append('quality', quality.toString()); fd.append('scale', scale.toString()); fd.append('jobId', jobId);
+    fd.append('pageConfigs', JSON.stringify(pages.map(p => ({ index: p.index, rotation: p.rotation }))));
 
     try {
       const res = await fetch('/api/compress', { method: 'POST', body: fd });
@@ -77,7 +100,7 @@ function App() {
       const orig = parseInt(res.headers.get('X-Original-Size') || '0');
       const comp = parseInt(res.headers.get('X-Compressed-Size') || '0');
       setStats({ original: orig, compressed: comp, reduction: (((orig-comp)/orig)*100).toFixed(1), jobId });
-      const blob = await responseBlob(res);
+      const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `compressed_${file.name}`;
       document.body.appendChild(a); a.click(); a.remove();
@@ -86,114 +109,91 @@ function App() {
     finally { setIsProcessing(false); setProgress(null); es.close(); }
   };
 
-  const responseBlob = async (res: Response) => await res.blob();
-
-  const copyShareLink = () => {
-    if (!stats) return;
-    const url = `${window.location.origin}/api/download/${stats.jobId}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-2 md:p-4 font-sans text-slate-900 overflow-hidden">
-      <div className="w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row border border-slate-200">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-2 md:p-4 font-sans text-slate-900 overflow-hidden leading-tight">
+      <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row border border-slate-200 max-h-[90vh]">
         
-        {/* Left Side: Brand & Preview */}
-        <div className="md:w-5/12 bg-blue-600 p-6 flex flex-col justify-between text-white relative overflow-hidden">
+        {/* Left Side: Page Workstation */}
+        <div className="md:w-7/12 bg-blue-600 p-6 flex flex-col text-white relative overflow-hidden">
           <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-blue-500 rounded-full opacity-20 blur-3xl"></div>
-          <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-64 h-64 bg-blue-700 rounded-full opacity-30 blur-3xl"></div>
-
-          <div className="relative z-10 flex justify-between items-start">
-            <div>
-              <h1 className="text-2xl font-black tracking-tight leading-none">PDF Master</h1>
-              <p className="text-[9px] font-bold opacity-70 uppercase tracking-[0.2em] mt-1 text-blue-100">SaaS Edition • v3.0</p>
-            </div>
-            <div className="hidden sm:block bg-white/10 p-2 rounded-lg backdrop-blur-md border border-white/10 shadow-xl">
-               <CheckCircle2 size={18} className="text-blue-200" />
-            </div>
+          <div className="relative z-10 mb-4 flex justify-between items-center">
+            <div><h1 className="text-xl font-black tracking-tighter">PDF WORKSTATION</h1><p className="text-[8px] font-bold opacity-60 uppercase tracking-[0.3em]">Master Edition • v3.5</p></div>
+            {file && <button onClick={()=>setFile(null)} className="text-[10px] font-black uppercase bg-white/10 px-3 py-1 rounded-full hover:bg-white/20 transition-colors">Change File</button>}
           </div>
 
-          <div className="my-4 relative z-10 flex-grow flex flex-col justify-center">
-            {file && preview ? (
-              <div className="relative group rounded-xl overflow-hidden shadow-2xl border-4 border-white/20 aspect-[3/4] max-h-[280px] mx-auto transition-transform hover:scale-[1.02]">
-                <img src={preview} className={`w-full h-full object-cover transition-opacity duration-500 ${isPreviewing ? 'opacity-40' : 'opacity-100'}`} alt="Preview" />
-                {isPreviewing && <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="animate-spin text-white" /></div>}
-                <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black/80 to-transparent text-[10px] font-black tracking-widest text-white/90">LIVE PREVIEW (1ST PAGE)</div>
-                <button onClick={() => {setFile(null); setPreview(null);}} className="absolute top-2 right-2 bg-red-500/80 hover:bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm">✕</button>
-              </div>
-            ) : (
-              <div onDragOver={(e)=>{e.preventDefault(); setIsDragging(true)}} onDragLeave={()=>setIsDragging(false)} onDrop={handleDrop} onClick={()=>document.getElementById('fi')?.click()}
-                className={`border-2 border-dashed rounded-3xl p-8 text-center cursor-pointer transition-all ${isDragging ? 'bg-white/20 scale-105 shadow-2xl border-white' : 'border-blue-300 hover:border-white hover:bg-white/5'}`}>
+          <div className="relative z-10 flex-grow overflow-y-auto pr-2 custom-scrollbar">
+            {!file ? (
+              <div onDragOver={(e)=>{e.preventDefault(); setIsDragging(true)}} onDragLeave={()=>setIsDragging(false)} onDrop={(e)=>{e.preventDefault(); handleFileChange({target:{files:e.dataTransfer.files}} as any)}} onClick={()=>document.getElementById('fi')?.click()}
+                className={`h-full min-h-[300px] border-2 border-dashed rounded-3xl flex flex-col items-center justify-center cursor-pointer transition-all ${isDragging ? 'bg-white/20 scale-95 border-white' : 'border-blue-300 hover:bg-white/5'}`}>
                 <input id="fi" type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />
-                <div className="flex flex-col items-center">
-                  <div className={`p-4 rounded-2xl mb-3 ${isDragging ? 'bg-white text-blue-600 shadow-xl' : 'bg-blue-500/50 text-white shadow-lg'}`}><FileUp size={32} /></div>
-                  <span className="font-black text-sm uppercase tracking-wider">Select PDF</span>
-                  <span className="text-[10px] mt-1 opacity-50 font-black uppercase tracking-widest leading-none">Drop Anywhere</span>
-                </div>
+                <FileUp size={48} className="mb-4 opacity-80" /><span className="font-black text-lg uppercase">Select PDF</span><span className="text-[10px] mt-2 opacity-50 uppercase font-black">Drop Anywhere</span>
               </div>
+            ) : loadingPages ? (
+              <div className="h-full flex flex-col items-center justify-center animate-pulse"><Loader2 className="animate-spin mb-4" size={48} /><span className="text-xs font-black uppercase tracking-widest">Building Workstation...</span></div>
+            ) : (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={pages.map(p => p.id)} strategy={verticalListSortingStrategy}>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-4 p-1">
+                    {pages.map(page => <SortablePage key={page.id} page={page} onRotate={onRotate} onDelete={onDelete} />)}
+                  </div>
+                </SortableContext>
+              </DndContext>
             )}
           </div>
-
-          <div className="relative z-10 flex justify-center md:justify-start">
-            <a href="https://github.com/Benedict-CS/pdf-compress" target="_blank" rel="noopener" className="flex items-center gap-2 text-blue-200 hover:text-white transition-colors text-[9px] font-black uppercase tracking-[0.2em] group">
-              <Github size={14} className="group-hover:rotate-12 transition-transform" /><span>Source Code</span>
-            </a>
+          <div className="relative z-10 pt-4 flex justify-between items-center border-t border-white/10 mt-4">
+            <a href="https://github.com/Benedict-CS/pdf-compress" target="_blank" className="flex items-center gap-2 text-blue-200 hover:text-white transition-colors text-[9px] font-black uppercase tracking-widest"><Github size={12} /><span>Source</span></a>
+            {file && <span className="text-[9px] font-black uppercase opacity-60">{pages.length} Pages Active</span>}
           </div>
         </div>
 
         {/* Right Side: Control */}
-        <div className="md:w-7/12 p-6 md:p-8 flex flex-col justify-center bg-white relative min-h-[480px]">
+        <div className="md:w-5/12 p-6 md:p-8 flex flex-col justify-center bg-white relative">
           <div className="space-y-6 max-w-sm mx-auto w-full">
             <div className="h-16 flex items-center justify-center">
               {!isProcessing && stats ? (
-                <div className="flex flex-col w-full gap-2 animate-in slide-in-from-top-4 duration-500">
+                <div className="flex flex-col w-full gap-2 animate-in slide-in-from-right-4">
                   <div className="flex gap-2">
-                    <div className="flex-1 bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex items-center gap-3 shadow-sm">
-                      <TrendingDown className="text-emerald-600 flex-shrink-0" size={18} />
-                      <div><p className="text-[8px] font-black text-emerald-600 uppercase leading-none mb-1">Reduced</p><p className="text-lg font-black text-emerald-700 leading-none">{stats.reduction}%</p></div>
+                    <div className="flex-1 bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex items-center gap-2 shadow-sm">
+                      <TrendingDown className="text-emerald-600" size={16} />
+                      <div><p className="text-[7px] font-black text-emerald-600 uppercase">Saved</p><p className="text-lg font-black text-emerald-700">{stats.reduction}%</p></div>
                     </div>
-                    <div className="flex-1 bg-blue-50 border border-blue-100 p-3 rounded-xl flex items-center gap-3 shadow-sm">
-                      <CheckCircle2 className="text-blue-600 flex-shrink-0" size={18} />
-                      <div><p className="text-[8px] font-black text-blue-600 uppercase leading-none mb-1">Final Size</p><p className="text-lg font-black text-blue-700 leading-none">{formatSize(stats.compressed)}</p></div>
+                    <div className="flex-1 bg-blue-50 border border-blue-100 p-3 rounded-xl flex items-center gap-2 shadow-sm">
+                      <CheckCircle2 className="text-blue-600" size={16} />
+                      <div><p className="text-[7px] font-black text-blue-600 uppercase">Size</p><p className="text-lg font-black text-blue-700">{formatSize(stats.compressed)}</p></div>
                     </div>
                   </div>
-                  <button onClick={copyShareLink} className={`w-full py-2 rounded-lg border-2 border-slate-100 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${copied ? 'bg-emerald-500 border-emerald-500 text-white' : 'text-slate-500 hover:bg-slate-50 hover:border-slate-200'}`}>
-                    {copied ? <><Check size={14} /> Link Copied</> : <><Share2 size={14} /> Copy Share Link</>}
+                  <button onClick={()=>{const url=`${window.location.origin}/api/download/${stats.jobId}`; navigator.clipboard.writeText(url); setCopied(true); setTimeout(()=>setCopied(false),2000);}} className={`w-full py-2 rounded-lg border-2 text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${copied ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}>
+                    {copied ? <><Check size={12} /> Copied</> : <><Share2 size={12} /> Share Link</>}
                   </button>
                 </div>
               ) : isProcessing && progress ? (
-                <div className="w-full space-y-3 animate-pulse">
-                  <div className="flex justify-between items-end"><p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Crunching Pages</p><p className="text-xs font-black text-blue-700">{progress.current} / {progress.total}</p></div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200 p-0.5"><div className="h-full bg-blue-600 rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(37,99,235,0.4)]" style={{ width: `${(progress.current/progress.total)*100}%` }} /></div>
+                <div className="w-full space-y-2 animate-pulse text-blue-600">
+                  <div className="flex justify-between items-end px-1"><p className="text-[8px] font-black uppercase">Processing Workstation</p><p className="text-xs font-black">{progress.current} / {progress.total}</p></div>
+                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200"><div className="h-full bg-blue-600 rounded-full transition-all duration-300" style={{ width: `${(progress.current/progress.total)*100}%` }} /></div>
                 </div>
-              ) : <div className="flex flex-col items-center text-slate-200"><Eye size={32} className="opacity-20" /><p className="text-[9px] font-black uppercase tracking-[0.3em] mt-1">Standby</p></div>}
+              ) : <div className="flex flex-col items-center text-slate-200"><Eye size={32} className="opacity-10" /><p className="text-[8px] font-black uppercase tracking-[0.3em] mt-2">Ready</p></div>}
             </div>
 
-            <div className="space-y-4">
-              <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2 mb-2 italic">Configuration</h2>
+            <div className="space-y-6">
+              <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] border-b border-slate-100 pb-2 italic">Output Profile</h2>
               <div className="space-y-6">
-                <div className="group">
-                  <div className="flex justify-between items-center mb-2"><label className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Quality Profile</label><span className="text-[11px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded ring-1 ring-blue-100">{Math.round(quality*100)}%</span></div>
-                  <input type="range" min="0.1" max="1.0" step="0.05" value={quality} onChange={(e)=>setQuality(Number(e.target.value))} className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-blue-600 hover:bg-slate-200 transition-colors" />
+                <div>
+                  <div className="flex justify-between items-center mb-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Quality</label><span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{Math.round(quality*100)}%</span></div>
+                  <input type="range" min="0.1" max="1.0" step="0.05" value={quality} onChange={(e)=>setQuality(Number(e.target.value))} className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-blue-600" />
                 </div>
-                <div className="group">
-                  <div className="flex justify-between items-center mb-2"><label className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Resolution DPI</label><span className="text-[11px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded ring-1 ring-blue-100">{scale.toFixed(1)}x</span></div>
-                  <input type="range" min="0.5" max="5.0" step="0.5" value={scale} onChange={(e)=>setScale(Number(e.target.value))} className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-blue-600 hover:bg-slate-200 transition-colors" />
+                <div>
+                  <div className="flex justify-between items-center mb-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Resolution</label><span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{scale.toFixed(1)}x</span></div>
+                  <input type="range" min="0.5" max="5.0" step="0.5" value={scale} onChange={(e)=>setScale(Number(e.target.value))} className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-blue-600" />
                 </div>
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-50">
-              {error && <div className="flex items-center gap-2 text-red-600 bg-red-50 p-2.5 rounded-xl text-[10px] border border-red-100 mb-4 font-bold uppercase tracking-wider animate-in shake-1"><AlertCircle size={14} className="flex-shrink-0" />{error}</div>}
-              <button onClick={handleCompress} disabled={!file || isProcessing} className={`w-full py-4.5 rounded-2xl font-black text-white transition-all flex items-center justify-center gap-3 shadow-2xl relative overflow-hidden ${!file || isProcessing ? 'bg-slate-100 text-slate-300' : 'bg-blue-600 hover:bg-blue-700 active:scale-95 shadow-blue-200'}`}>
-                {isProcessing ? <><Loader2 className="animate-spin" size={22} /><span className="uppercase tracking-[0.2em] text-sm">Processing</span></> : <><FileDown size={22} /><span className="uppercase tracking-[0.3em] text-sm font-black italic">Compress</span></>}
+            <div className="pt-6">
+              {error && <div className="flex items-center gap-2 text-red-600 bg-red-50 p-2 rounded-lg text-[9px] border border-red-100 mb-4 font-black uppercase animate-shake leading-none"><AlertCircle size={12} />{error}</div>}
+              <button onClick={handleCompress} disabled={!file || isProcessing || pages.length === 0} className={`w-full py-4 rounded-xl font-black text-white transition-all flex items-center justify-center gap-3 shadow-2xl relative overflow-hidden ${!file || isProcessing || pages.length === 0 ? 'bg-slate-100 text-slate-300 shadow-none' : 'bg-blue-600 hover:bg-blue-700 active:scale-95 shadow-blue-200'}`}>
+                {isProcessing ? <><Loader2 className="animate-spin" size={20} /><span className="uppercase tracking-widest text-sm">Crunching</span></> : <><FileDown size={20} /><span className="uppercase tracking-[0.3em] text-sm italic">Generate</span></>}
               </button>
-              <div className="mt-4 flex flex-col items-center gap-1">
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.1em] opacity-40 leading-none italic">Auto-delete after compress • 100% Privacy</p>
-                <div className="w-8 h-0.5 bg-slate-100 rounded-full mt-1"></div>
-              </div>
+              <p className="text-center text-[8px] text-slate-300 font-bold mt-4 uppercase tracking-[0.1em] leading-none">Auto-delete • Private Process • SaaS v3.5</p>
             </div>
           </div>
         </div>
