@@ -160,9 +160,14 @@ function App() {
                       <div><p className="text-[7px] font-black text-blue-600 uppercase">Size</p><p className="text-lg font-black text-blue-700 leading-none">{formatSize(stats.compressed)}</p></div>
                     </div>
                   </div>
-                  <button onClick={()=>{navigator.clipboard.writeText(`${window.location.origin}/api/download/${stats.jobId}`); setCopied(true); setTimeout(()=>setCopied(false),2000);}} className={`w-full py-1.5 rounded-lg border-2 text-[9px] font-black uppercase flex items-center justify-center gap-2 transition-all ${copied ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}>
-                    {copied ? <><Check size={12} /> Copied</> : <><Share2 size={12} /> Copy Share Link</>}
-                  </button>
+                  <div className="flex gap-2">
+                    <button onClick={()=>{navigator.clipboard.writeText(`${window.location.origin}/api/download/${stats.jobId}`); setCopied(true); setTimeout(()=>setCopied(false),2000);}} className={`flex-1 py-2 rounded-lg border-2 text-[9px] font-black uppercase flex items-center justify-center gap-2 transition-all ${copied ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}>
+                      {copied ? <><Check size={12} /> Copied</> : <><Share2 size={12} /> Share Link</>}
+                    </button>
+                    <button onClick={()=>{setFile(null); setStats(null); setPages([]);}} className="flex-1 py-2 rounded-lg border-2 border-blue-100 bg-blue-50 text-blue-600 hover:bg-blue-100 text-[9px] font-black uppercase flex items-center justify-center gap-2 transition-all">
+                      <RotateCw size={12} /> Process Another
+                    </button>
+                  </div>
                 </div>
               ) : isProcessing && progress ? (
                 <div className="w-full space-y-2 animate-pulse text-blue-600">

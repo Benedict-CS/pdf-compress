@@ -36,6 +36,13 @@ async function processTask() {
     const pdfDoc = await PDFLibDoc.load(data);
     const newDoc = await PDFLibDoc.create();
     
+    // Privacy Scrubbing & Custom Branding
+    newDoc.setProducer('PDF Master v4.0 (Benedict-CS)');
+    newDoc.setCreator('PDF Master v4.0');
+    newDoc.setAuthor('');
+    newDoc.setSubject('');
+    newDoc.setTitle('');
+    
     parentPort.postMessage({ type: 'start', total: pageConfigs.length });
     
     for (let i = 0; i < pageConfigs.length; i++) {
@@ -94,7 +101,18 @@ async function processTask() {
   const finalConfigs = pageConfigs || Array.from({ length: pdfDoc.numPages }, (_, i) => ({ index: i + 1, rotation: 0 }));
   const numPages = finalConfigs.length;
   parentPort.postMessage({ type: 'start', total: numPages });
-  const doc = new PDFDocument({ autoFirstPage: false, compress: true });
+  
+  const doc = new PDFDocument({ 
+    autoFirstPage: false, 
+    compress: true,
+    info: {
+      Producer: 'PDF Master v4.0 (Benedict-CS)',
+      Creator: 'PDF Master v4.0',
+      Author: '',
+      Title: '',
+      Subject: ''
+    }
+  });
   const writeStream = fs.createWriteStream(outputPath);
   doc.pipe(writeStream);
 
