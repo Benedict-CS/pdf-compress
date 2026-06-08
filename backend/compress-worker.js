@@ -42,8 +42,8 @@ class NodeCanvasFactory {
   }
 }
 
-async function compressPDF() {
-  const { inputPath, outputPath, quality, scale } = workerData;
+async function processTask() {
+  const { type, inputPath, outputPath, quality, scale } = workerData;
   const data = new Uint8Array(fs.readFileSync(inputPath));
   const canvasFactory = new NodeCanvasFactory();
 
@@ -57,9 +57,34 @@ async function compressPDF() {
   });
 
   const pdfDoc = await loadingTask.promise;
-  const numPages = pdfDoc.numPages;
 
-  // Send total pages to parent
+  // --- PREVIEW MODE: Only render first page and exit ---
+  if (type === 'preview') {
+    const page = await pdfDoc.getPage(1);
+    const viewport = page.getViewport({ scale: 1.5 }); // High enough for preview
+    const canvasAndCtx = canvasFactory.create(viewport.width, viewport.height);
+    const ctx = canvasAndCtx.context;
+
+    try {
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, viewport.width, viewport.height);
+      await page.render({
+        canvasContext: ctx,
+        viewport,
+        canvasFactory,
+        disableCreateImageBitmap: true,
+        intent: 'print',
+      }).promise;
+
+      const base64 = canvasAndCtx.canvas.toBuffer('image/jpeg', { quality }).toString('base64');
+      return { success: true, preview: `data:image/jpeg;base64,${base64}` };
+    } finally {
+      canvasFactory.destroy(canvasAndCtx);
+    }
+  }
+
+  // --- COMPRESS MODE: Full PDF re-generation ---
+  const numPages = pdfDoc.numPages;
   parentPort.postMessage({ type: 'start', total: numPages });
 
   const doc = new PDFDocument({ autoFirstPage: false, compress: true });
@@ -90,7 +115,6 @@ async function compressPDF() {
       doc.addPage({ size: [pageW, pageH], margin: 0 });
       doc.image(imgBuffer, 0, 0, { width: pageW, height: pageH });
       
-      // Notify progress
       parentPort.postMessage({ type: 'progress', current: i, total: numPages });
     } finally {
       canvasFactory.destroy(canvasAndCtx);
@@ -107,6 +131,6 @@ async function compressPDF() {
   return { success: true };
 }
 
-compressPDF()
+processTask()
   .then(result => parentPort.postMessage({ type: 'done', ...result }))
   .catch(err => parentPort.postMessage({ type: 'error', error: err.message }));
