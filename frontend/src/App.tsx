@@ -186,11 +186,11 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-2 md:p-4 font-sans text-slate-900 overflow-hidden leading-tight">
-      <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row border border-slate-200 max-h-[92vh]">
+    <div className="min-h-screen bg-slate-50 flex md:items-center justify-center p-0 md:p-4 font-sans text-slate-900 md:overflow-hidden leading-tight">
+      <div className="w-full max-w-6xl bg-white md:rounded-2xl shadow-2xl flex flex-col md:flex-row md:border border-slate-200 min-h-screen md:min-h-0 md:max-h-[92vh] md:overflow-hidden">
         
         {/* Left Side: Workstation */}
-        <div className="md:w-7/12 bg-blue-600 p-5 flex flex-col text-white relative overflow-hidden">
+        <div className="md:w-7/12 bg-blue-600 p-5 flex flex-col text-white relative md:overflow-hidden min-h-[60vh] md:min-h-0">
           <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-blue-500 rounded-full opacity-20 blur-3xl"></div>
           <div className="relative z-10 mb-4 flex justify-between items-center">
             <div><h1 className="text-xl font-black tracking-tighter">PDF WORKSTATION</h1><p className="text-[8px] font-bold opacity-60 uppercase tracking-[0.3em]">Master Edition • v5.0</p></div>
