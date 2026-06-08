@@ -21,6 +21,9 @@ app.use('/api/', limiter);
 const activeJobs = new Map();
 const shareableFiles = new Map();
 
+app.get('/', (req, res) => res.send('PDF Compressor API is online.'));
+app.get('/api/', (req, res) => res.send('PDF Compressor API is online.'));
+
 app.get('/api/download/:jobId', (req, res) => {
   const info = shareableFiles.get(req.params.jobId);
   if (!info) return res.status(404).send('Not found.');
@@ -134,17 +137,22 @@ app.post('/api/compress', upload.array('files', 20), async (req, res) => {
   }
 });
 
-app.listen(3001, () => {
-  if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
-  setInterval(() => {
-    const dir = path.join(__dirname, 'uploads');
-    fs.readdir(dir, (err, files) => {
-      if (err) return;
-      const now = Date.now();
-      files.forEach(f => {
-        const p = path.join(dir, f);
-        fs.stat(p, (err, s) => { if (!err && (now - s.mtimeMs) > 3600000) fs.unlink(p, () => {}); });
+const PORT = process.env.PORT || 3001;
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
+    setInterval(() => {
+      const dir = path.join(__dirname, 'uploads');
+      fs.readdir(dir, (err, files) => {
+        if (err) return;
+        const now = Date.now();
+        files.forEach(f => {
+          const p = path.join(dir, f);
+          fs.stat(p, (err, s) => { if (!err && (now - s.mtimeMs) > 3600000) fs.unlink(p, () => {}); });
+        });
       });
-    });
-  }, 600000);
-});
+    }, 600000);
+  });
+}
+
+export default app;
