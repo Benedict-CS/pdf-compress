@@ -9,48 +9,29 @@ import { rateLimit } from 'express-rate-limit';
 import PQueue from 'p-queue';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const upload = multer({ 
-  dest: 'uploads/',
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
-});
-
+const upload = multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } });
 const app = express();
-app.use(cors({
-  exposedHeaders: ['X-Original-Size', 'X-Compressed-Size', 'X-Compression-Time', 'X-Total-Pages']
-}));
+app.use(cors({ exposedHeaders: ['X-Original-Size', 'X-Compressed-Size'] }));
 app.use(express.json());
 
 const queue = new PQueue({ concurrency: 2 });
-
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 50,
-  message: 'Too many requests. Please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+const limiter = rateLimit({ windowMs: 15*60*1000, max: 100, standardHeaders: true, legacyHeaders: false });
 app.use('/api/', limiter);
 
 const activeJobs = new Map();
 const shareableFiles = new Map();
 
-app.get('/', (req, res) => res.send('PDF Compressor API is online.'));
-
 app.get('/api/download/:jobId', (req, res) => {
-  const { jobId } = req.params;
-  const fileInfo = shareableFiles.get(jobId);
-  if (!fileInfo) return res.status(404).send('Not found.');
-  const filePath = path.join(__dirname, 'uploads', fileInfo.internalName);
-  res.download(filePath, fileInfo.originalName);
+  const info = shareableFiles.get(req.params.jobId);
+  if (!info) return res.status(404).send('Not found.');
+  res.download(path.join(__dirname, 'uploads', info.internalName), info.originalName);
 });
 
 app.get('/api/progress/:jobId', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  const { jobId } = req.params;
   const interval = setInterval(() => {
-    const job = activeJobs.get(jobId);
+    const job = activeJobs.get(req.params.jobId);
     if (job) {
       res.write(`data: ${JSON.stringify(job)}\n\n`);
       if (job.status === 'done' || job.status === 'error') { clearInterval(interval); res.end(); }
@@ -63,8 +44,7 @@ function runWorker(workerData, jobId) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(path.join(__dirname, 'compress-worker.js'), { workerData });
     worker.on('message', (msg) => {
-      if (msg.type === 'start') activeJobs.set(jobId, { status: 'processing', current: 0, total: msg.total });
-      else if (msg.type === 'progress') activeJobs.set(jobId, { status: 'processing', current: msg.current, total: msg.total });
+      if (msg.type === 'start' || msg.type === 'progress') activeJobs.set(jobId, { status: 'processing', current: msg.current || 0, total: msg.total });
       else if (msg.type === 'done') resolve(msg);
       else if (msg.type === 'error') reject(new Error(msg.error));
     });
@@ -72,68 +52,52 @@ function runWorker(workerData, jobId) {
   });
 }
 
-// --- NEW: Load all thumbnails ---
 app.post('/api/thumbnails', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).send('No file.');
   try {
     const result = await runWorker({ type: 'thumbnails', inputPath: req.file.path }, 'thumbs-' + Date.now());
-    res.json({ thumbnails: result.thumbnails, totalPages: result.totalPages });
-  } catch (error) { res.status(500).send(error.message); }
+    res.json(result);
+  } catch (e) { res.status(500).send(e.message); }
   finally { if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); }
 });
 
 app.post('/api/preview', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).send('No file.');
   try {
-    const pageConfigs = req.body.pageConfigs ? JSON.parse(req.body.pageConfigs) : null;
     const result = await runWorker({
-      type: 'preview',
-      inputPath: req.file.path,
-      quality: parseFloat(req.body.quality) || 0.9,
-      pageConfigs
-    }, 'preview-' + Date.now());
-    res.json({ preview: result.preview });
-  } catch (error) { res.status(500).send(error.message); }
+      type: 'preview', inputPath: req.file.path, quality: parseFloat(req.body.quality) || 0.9, pageConfigs: JSON.parse(req.body.pageConfigs || 'null')
+    }, 'prev-' + Date.now());
+    res.json(result);
+  } catch (e) { res.status(500).send(e.message); }
   finally { if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); }
 });
 
 app.post('/api/compress', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).send('No file.');
   const jobId = req.body.jobId || Math.random().toString(36).substring(7);
-  const pageConfigs = req.body.pageConfigs ? JSON.parse(req.body.pageConfigs) : null;
-  const inputPath = req.file.path;
+  const mode = req.body.mode || 'rasterize';
   const internalName = `compressed_${req.file.filename}.pdf`;
   const outputPath = path.join('uploads', internalName);
 
   try {
-    const quality = parseFloat(req.body.quality) || 0.9;
-    const scale = parseFloat(req.body.scale) || 3.0;
-
     await queue.add(() => runWorker({
-      type: 'compress',
-      inputPath,
-      outputPath,
-      quality,
-      scale,
-      pageConfigs
+      mode, type: 'compress', inputPath: req.file.path, outputPath, quality: parseFloat(req.body.quality) || 0.9, scale: parseFloat(req.body.scale) || 3.0, pageConfigs: JSON.parse(req.body.pageConfigs || 'null')
     }, jobId));
 
     shareableFiles.set(jobId, { internalName, originalName: req.file.originalname, createdAt: Date.now() });
-    res.set({ 'X-Original-Size': fs.statSync(inputPath).size, 'X-Compressed-Size': fs.statSync(outputPath).size });
+    res.set({ 'X-Original-Size': fs.statSync(req.file.path).size, 'X-Compressed-Size': fs.statSync(outputPath).size });
     res.download(outputPath, req.file.originalname, () => {
-      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+      if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       activeJobs.set(jobId, { status: 'done' });
     });
   } catch (error) {
     activeJobs.set(jobId, { status: 'error', error: error.message });
     res.status(500).send(error.message);
-    if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+    if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
   }
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+app.listen(3001, () => {
   if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
   setInterval(() => {
     const dir = path.join(__dirname, 'uploads');
@@ -142,12 +106,7 @@ app.listen(PORT, () => {
       const now = Date.now();
       files.forEach(f => {
         const p = path.join(dir, f);
-        fs.stat(p, (err, s) => { 
-          if (!err && (now - s.mtimeMs) > 3600000) {
-            fs.unlink(p, () => {});
-            for (const [id, info] of shareableFiles.entries()) { if (info.internalName === f) shareableFiles.delete(id); }
-          }
-        });
+        fs.stat(p, (err, s) => { if (!err && (now - s.mtimeMs) > 3600000) fs.unlink(p, () => {}); });
       });
     });
   }, 600000);
