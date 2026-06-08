@@ -20,12 +20,11 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// 2. Concurrency Control: Only allow 2 heavy compression tasks at a time
 const queue = new PQueue({ concurrency: 2 });
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 30, // Increased for preview + compress usage
+  max: 50,
   message: 'Too many requests. Please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -33,8 +32,22 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 const activeJobs = new Map();
+const shareableFiles = new Map(); // Link JobID to filename for sharing
 
 app.get('/', (req, res) => res.send('PDF Compressor API is online.'));
+
+// 3. Shareable Link Endpoint
+app.get('/api/download/:jobId', (req, res) => {
+  const { jobId } = req.params;
+  const fileInfo = shareableFiles.get(jobId);
+  
+  if (!fileInfo) return res.status(404).send('File not found or expired.');
+  
+  const filePath = path.join(__dirname, 'uploads', fileInfo.internalName);
+  if (!fs.existsSync(filePath)) return res.status(404).send('File has been deleted.');
+  
+  res.download(filePath, fileInfo.originalName);
+});
 
 app.get('/api/progress/:jobId', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
@@ -48,7 +61,6 @@ app.get('/api/progress/:jobId', (req, res) => {
       if (job.status === 'done' || job.status === 'error') {
         clearInterval(interval);
         res.end();
-        activeJobs.delete(jobId);
       }
     }
   }, 500);
@@ -68,7 +80,6 @@ function runWorker(workerData, jobId) {
   });
 }
 
-// 1. Instant Preview Endpoint
 app.post('/api/preview', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).send('No file.');
   try {
@@ -90,14 +101,14 @@ app.post('/api/compress', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).send('No file.');
   const jobId = req.body.jobId || Math.random().toString(36).substring(7);
   const inputPath = req.file.path;
-  const outputPath = path.join('uploads', `compressed_${req.file.filename}.pdf`);
+  const internalName = `compressed_${req.file.filename}.pdf`;
+  const outputPath = path.join('uploads', internalName);
 
   try {
     const quality = parseFloat(req.body.quality) || 0.9;
     const scale = parseFloat(req.body.scale) || 3.0;
 
-    // Use Queue to limit concurrency
-    const result = await queue.add(() => runWorker({
+    await queue.add(() => runWorker({
       type: 'compress',
       inputPath,
       outputPath,
@@ -108,11 +119,20 @@ app.post('/api/compress', upload.single('file'), async (req, res) => {
     const originalSize = fs.statSync(inputPath).size;
     const compressedSize = fs.statSync(outputPath).size;
     
+    // Store for sharing
+    shareableFiles.set(jobId, { 
+      internalName, 
+      originalName: req.file.originalname,
+      createdAt: Date.now()
+    });
+
     res.set({ 'X-Original-Size': originalSize, 'X-Compressed-Size': compressedSize });
+    
+    // Send file
     res.download(outputPath, req.file.originalname, () => {
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
-      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
       activeJobs.set(jobId, { status: 'done' });
+      // We don't delete outputPath here immediately to allow "Copy Link" to work
     });
   } catch (error) {
     activeJobs.set(jobId, { status: 'error', error: error.message });
@@ -125,6 +145,7 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
+  
   setInterval(() => {
     const dir = path.join(__dirname, 'uploads');
     fs.readdir(dir, (err, files) => {
@@ -132,8 +153,16 @@ app.listen(PORT, () => {
       const now = Date.now();
       files.forEach(f => {
         const p = path.join(dir, f);
-        fs.stat(p, (err, s) => { if (!err && (now - s.mtimeMs) > 3600000) fs.unlink(p, () => {}); });
+        fs.stat(p, (err, s) => { 
+            if (!err && (now - s.mtimeMs) > 3600000) {
+                fs.unlink(p, () => {});
+                // Clean up shareable map too
+                for (const [id, info] of shareableFiles.entries()) {
+                    if (info.internalName === f) shareableFiles.delete(id);
+                }
+            }
+        });
       });
     });
-  }, 1800000);
+  }, 600000); // Check every 10 mins
 });
