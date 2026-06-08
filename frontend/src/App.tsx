@@ -16,8 +16,8 @@ const SortablePage = ({ page, onRotate, onDelete }: { page: PageConfig, onRotate
   return (
     <div ref={setNodeRef} style={style} className="relative group bg-slate-50 rounded-lg p-1.5 border border-slate-200 flex flex-col items-center shadow-sm hover:shadow-md transition-shadow">
       <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 bg-white rounded shadow-sm z-10" {...attributes} {...listeners}><GripVertical size={10} className="text-slate-400" /></div>
-      <div className="w-full aspect-[3/4] overflow-hidden rounded bg-white relative">
-        <img src={page.src} className="w-full h-full object-cover transition-transform duration-300" style={{ transform: `rotate(${page.rotation}deg)` }} />
+      <div className="w-full flex items-center justify-center bg-white rounded overflow-hidden" style={{ aspectRatio: '1/1' }}>
+        <img src={page.src} className="max-w-full max-h-full object-contain transition-transform duration-300 drop-shadow-sm" style={{ transform: `rotate(${page.rotation}deg)` }} />
       </div>
       <div className="flex gap-1 mt-1.5">
         <button onClick={() => onRotate(page.id)} className="p-1 hover:bg-blue-100 text-blue-600 rounded transition-colors"><RotateCw size={12} /></button>
