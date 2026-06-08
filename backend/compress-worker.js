@@ -28,53 +28,20 @@ class NodeCanvasFactory {
 }
 
 async function processTask() {
-  const { mode, type, inputPath, outputPath, quality, scale, pageConfigs } = workerData;
-  const data = new Uint8Array(fs.readFileSync(inputPath));
+  const { mode, type, inputPath, inputFiles, outputPath, quality, scale, pageConfigs } = workerData;
 
-  // --- 1. LOSSLESS DIRECT EDIT MODE (Super Fast) ---
-  if (mode === 'direct' && type === 'compress') {
-    const pdfDoc = await PDFLibDoc.load(data);
-    const newDoc = await PDFLibDoc.create();
-    
-    // Privacy Scrubbing & Custom Branding
-    newDoc.setProducer('PDF Master v4.0 (Benedict-CS)');
-    newDoc.setCreator('PDF Master v4.0');
-    newDoc.setAuthor('');
-    newDoc.setSubject('');
-    newDoc.setTitle('');
-    
-    parentPort.postMessage({ type: 'start', total: pageConfigs.length });
-    
-    for (let i = 0; i < pageConfigs.length; i++) {
-      const config = pageConfigs[i];
-      const [copiedPage] = await newDoc.copyPages(pdfDoc, [config.index - 1]);
-      if (config.rotation) {
-        copiedPage.setRotation(degrees(config.rotation));
-      }
-      newDoc.addPage(copiedPage);
-      parentPort.postMessage({ type: 'progress', current: i + 1, total: pageConfigs.length });
-    }
-    
-    const pdfBytes = await newDoc.save();
-    fs.writeFileSync(outputPath, pdfBytes);
-    return { success: true };
-  }
-
-  // --- 2. EXISTING RASTERIZE MODES ---
-  const canvasFactory = new NodeCanvasFactory();
-  const loadingTask = pdfjsLib.getDocument({
-    data, canvasFactory, useWorkerFetch: false, isEvalSupported: false, disableFontFace: true, useSystemFonts: false,
-  });
-
-  const pdfDoc = await loadingTask.promise;
-
+  // --- 0. THUMBNAILS MODE (Single File) ---
   if (type === 'thumbnails') {
+    const data = new Uint8Array(fs.readFileSync(inputPath));
+    const canvasFactory = new NodeCanvasFactory();
+    const loadingTask = pdfjsLib.getDocument({ data, canvasFactory, disableFontFace: true, useSystemFonts: false });
+    const pdfDoc = await loadingTask.promise;
     const count = pdfDoc.numPages;
     const thumbs = [];
-    const limit = Math.min(count, 50);
+    const limit = Math.min(count, 50); // Hard limit for memory safety
     for (let i = 1; i <= limit; i++) {
       const page = await pdfDoc.getPage(i);
-      const viewport = page.getViewport({ scale: 0.4 });
+      const viewport = page.getViewport({ scale: 0.3 });
       const cc = canvasFactory.create(viewport.width, viewport.height);
       try {
         cc.context.fillStyle = 'white'; cc.context.fillRect(0, 0, viewport.width, viewport.height);
@@ -85,10 +52,48 @@ async function processTask() {
     return { success: true, thumbnails: thumbs, totalPages: count };
   }
 
+  // --- 1. LOSSLESS DIRECT EDIT & MERGE MODE ---
+  if (mode === 'direct' && type === 'compress') {
+    const newDoc = await PDFLibDoc.create();
+    newDoc.setProducer('PDF Master v5.0 (Benedict-CS)');
+    newDoc.setCreator('PDF Master v5.0');
+    
+    const loadedDocs = new Map();
+    for (const f of inputFiles) {
+      const data = new Uint8Array(fs.readFileSync(f.path));
+      loadedDocs.set(f.id, await PDFLibDoc.load(data));
+    }
+    
+    parentPort.postMessage({ type: 'start', total: pageConfigs.length });
+    
+    for (let i = 0; i < pageConfigs.length; i++) {
+      const config = pageConfigs[i];
+      const pdfDoc = loadedDocs.get(config.fileId);
+      const [copiedPage] = await newDoc.copyPages(pdfDoc, [config.index - 1]);
+      if (config.rotation) copiedPage.setRotation(degrees(config.rotation));
+      newDoc.addPage(copiedPage);
+      parentPort.postMessage({ type: 'progress', current: i + 1, total: pageConfigs.length });
+    }
+    
+    fs.writeFileSync(outputPath, await newDoc.save());
+    return { success: true };
+  }
+
+  // --- 2. RASTERIZE PREVIEW & COMPRESS MODES ---
+  const canvasFactory = new NodeCanvasFactory();
+  const loadedDocs = new Map();
+  for (const f of inputFiles) {
+    const data = new Uint8Array(fs.readFileSync(f.path));
+    const loadingTask = pdfjsLib.getDocument({ data, canvasFactory, disableFontFace: true, useSystemFonts: false });
+    loadedDocs.set(f.id, await loadingTask.promise);
+  }
+
   if (type === 'preview') {
-    const page = await pdfDoc.getPage(1);
-    const rotation = pageConfigs?.[0]?.rotation || 0;
-    const viewport = page.getViewport({ scale: 1.5, rotation });
+    if (!pageConfigs || pageConfigs.length === 0) return { success: true, preview: null };
+    const config = pageConfigs[0];
+    const pdfDoc = loadedDocs.get(config.fileId);
+    const page = await pdfDoc.getPage(config.index);
+    const viewport = page.getViewport({ scale: 1.5, rotation: config.rotation || 0 });
     const cc = canvasFactory.create(viewport.width, viewport.height);
     try {
       cc.context.fillStyle = 'white'; cc.context.fillRect(0, 0, viewport.width, viewport.height);
@@ -98,26 +103,17 @@ async function processTask() {
   }
 
   // COMPRESS (RASTERIZE)
-  const finalConfigs = pageConfigs || Array.from({ length: pdfDoc.numPages }, (_, i) => ({ index: i + 1, rotation: 0 }));
-  const numPages = finalConfigs.length;
-  parentPort.postMessage({ type: 'start', total: numPages });
-  
+  parentPort.postMessage({ type: 'start', total: pageConfigs.length });
   const doc = new PDFDocument({ 
-    autoFirstPage: false, 
-    compress: true,
-    info: {
-      Producer: 'PDF Master v4.0 (Benedict-CS)',
-      Creator: 'PDF Master v4.0',
-      Author: '',
-      Title: '',
-      Subject: ''
-    }
+    autoFirstPage: false, compress: true,
+    info: { Producer: 'PDF Master v5.0 (Benedict-CS)', Creator: 'PDF Master v5.0' }
   });
   const writeStream = fs.createWriteStream(outputPath);
   doc.pipe(writeStream);
 
-  for (let i = 0; i < numPages; i++) {
-    const config = finalConfigs[i];
+  for (let i = 0; i < pageConfigs.length; i++) {
+    const config = pageConfigs[i];
+    const pdfDoc = loadedDocs.get(config.fileId);
     const page = await pdfDoc.getPage(config.index);
     const viewport = page.getViewport({ scale, rotation: config.rotation || 0 });
     const cc = canvasFactory.create(viewport.width, viewport.height);
@@ -128,7 +124,7 @@ async function processTask() {
       const pageH = viewport.height / scale;
       doc.addPage({ size: [pageW, pageH], margin: 0 });
       doc.image(cc.canvas.toBuffer('image/jpeg', { quality }), 0, 0, { width: pageW, height: pageH });
-      parentPort.postMessage({ type: 'progress', current: i + 1, total: numPages });
+      parentPort.postMessage({ type: 'progress', current: i + 1, total: pageConfigs.length });
     } finally { canvasFactory.destroy(cc); }
   }
   doc.end();
