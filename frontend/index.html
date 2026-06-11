@@ -2,13 +2,114 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+
+    <!-- Theme color: matches indigo-600 in light, slate-900 in dark, so the mobile chrome bar blends with our header. -->
+    <meta name="theme-color" content="#4f46e5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
+
+    <!-- Primary SEO -->
+    <title>PDF Master &mdash; Compress, Merge &amp; Edit PDFs Online</title>
+    <meta
+      name="description"
+      content="PDF Master is a free online PDF workstation. Compress, merge, reorder, rotate and edit PDF files securely in your browser with high-fidelity output."
+    />
+    <meta
+      name="keywords"
+      content="PDF compressor, compress PDF online, merge PDF, edit PDF, rotate PDF pages, reorder PDF, PDF tool, free PDF editor, PDF Master"
+    />
+    <meta name="author" content="Benedict-CS" />
+    <meta name="robots" content="index, follow" />
+
+    <!-- Favicons -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="alternate icon" type="image/x-icon" href="/favicon.ico" />
-    <title>PDF Compressor Online</title>
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="mask-icon" href="/favicon.svg" color="#4f46e5" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="PDF Master" />
+    <meta property="og:title" content="PDF Master — Compress, Merge & Edit PDFs Online" />
+    <meta
+      property="og:description"
+      content="Free, fast and private online PDF workstation. Compress, merge, reorder, rotate and edit your PDFs with high-fidelity output."
+    />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:image:alt" content="PDF Master — online PDF compression and editing" />
+    <meta property="og:url" content="https://example.com/" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="PDF Master — Compress, Merge & Edit PDFs Online" />
+    <meta
+      name="twitter:description"
+      content="Free, fast and private online PDF workstation. Compress, merge, reorder, rotate and edit your PDFs with high-fidelity output."
+    />
+    <meta name="twitter:image" content="/og-image.png" />
+
+    <!-- Fonts: preconnect + async stylesheet to avoid render-blocking -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      />
+    </noscript>
+
+    <!-- Flash-of-wrong-theme guard: must run BEFORE React mounts. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('pdf-theme');
+          var prefersDark =
+            window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var isDark = stored ? stored === 'dark' : prefersDark;
+          var root = document.documentElement;
+          if (isDark) {
+            root.classList.add('dark');
+          } else {
+            root.classList.remove('dark');
+          }
+        } catch (e) {
+          /* no-op: localStorage may be blocked */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <div
+        style="
+          font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+          max-width: 640px;
+          margin: 4rem auto;
+          padding: 1.5rem;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          line-height: 1.5;
+          color: #0f172a;
+          background: #f8fafc;
+        "
+      >
+        <h1 style="margin-top: 0; font-size: 1.25rem;">JavaScript is required</h1>
+        <p>
+          PDF Master is a client-heavy web application that needs JavaScript to compress, merge and
+          edit your PDF files. Please enable JavaScript in your browser settings and reload the
+          page.
+        </p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
